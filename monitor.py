@@ -117,7 +117,7 @@ def main():
             history[p_id] = price # 更新记忆
 
     if to_push:
-        to_push = to_push[:5]  # 👈 临时加这一行，只发前5个，看看能不能成功
+        # to_push = to_push[:5]  # 👈 临时加这一行，只发前5个，看看能不能成功
         print(f"准备推送 {len(to_push)} 件商品")
         # 尝试发送邮件
         try:
