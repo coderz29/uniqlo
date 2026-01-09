@@ -13,46 +13,89 @@ EMAIL_RECEIVER = os.environ.get('EMAIL_RECEIVER')
 SMTP_SERVER = "smtp.qq.com"  # 如果用Gmail或163请更换地址
 DB_FILE = "sent_products.json"
 
-def get_uniqlo_data():
-    url = "https://www.uniqlo.cn/data/pages/timelimit.html.json"
+# def get_uniqlo_data():
+#     url = "https://www.uniqlo.cn/data/pages/timelimit.html.json"
+#     headers = {
+#         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+#     }
+#     try:
+#         res = requests.get(url, headers=headers, timeout=15)
+#         data = res.json()
+#         items = []
+        
+#         # 遍历所有键值对
+#         for key, section_val in data.items():
+#             # 关键：只有当 key 以 section 开头，且内容确实是【字典】时才处理
+#             if key.startswith('section') and isinstance(section_val, dict):
+                
+#                 # 按照截图路径：sectionXX -> props -> items
+#                 props = section_val.get('props')
+                
+#                 # 再次确保 props 也是字典
+#                 if isinstance(props, dict):
+#                     raw_list = props.get('items', [])
+                    
+#                     if isinstance(raw_list, list):
+#                         for row in raw_list:
+#                             p_code = row.get('productCode')
+#                             if p_code:
+#                                 items.append({
+#                                     "productCode": str(p_code),
+#                                     "name": row.get('productName', '优衣库单品'),
+#                                     "price": float(row.get('price', 0)),
+#                                     "origin": row.get('originPrice', row.get('price')),
+#                                     "link": f"https://www.uniqlo.cn/product-detail.html?productCode={p_code}",
+#                                     "tag": "🔥限时特优"
+#                                 })
+        
+#         print(f"DEBUG: 接口解析成功，有效商品数: {len(items)}")
+#         return items
+#     except Exception as e:
+#         print(f"DEBUG: 解析异常: {e}")
+#         return []
+def get_all_uniqlo_data():
+    # 定义两个数据源
+    urls = {
+        "限时特优": "https://www.uniqlo.cn/data/pages/timelimit.html.json",
+        "超值精选": "https://www.uniqlo.cn/data/pages/super-u.html.json"
+    }
+    
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
-    try:
-        res = requests.get(url, headers=headers, timeout=15)
-        data = res.json()
-        items = []
-        
-        # 遍历所有键值对
-        for key, section_val in data.items():
-            # 关键：只有当 key 以 section 开头，且内容确实是【字典】时才处理
-            if key.startswith('section') and isinstance(section_val, dict):
-                
-                # 按照截图路径：sectionXX -> props -> items
-                props = section_val.get('props')
-                
-                # 再次确保 props 也是字典
-                if isinstance(props, dict):
+    
+    all_items = []
+    
+    for channel_name, url in urls.items():
+        try:
+            res = requests.get(url, headers=headers, timeout=15)
+            data = res.json()
+            count = 0
+            
+            for key, section_val in data.items():
+                if key.startswith('section') and isinstance(section_val, dict):
+                    # 根据你的截图 image_027641.png，超值精选的结构也是 section -> props -> items
+                    props = section_val.get('props', {})
                     raw_list = props.get('items', [])
                     
                     if isinstance(raw_list, list):
                         for row in raw_list:
                             p_code = row.get('productCode')
                             if p_code:
-                                items.append({
+                                all_items.append({
                                     "productCode": str(p_code),
                                     "name": row.get('productName', '优衣库单品'),
                                     "price": float(row.get('price', 0)),
                                     "origin": row.get('originPrice', row.get('price')),
                                     "link": f"https://www.uniqlo.cn/product-detail.html?productCode={p_code}",
-                                    "tag": "🔥限时特优"
+                                    "tag": f"✨{channel_name}"  # 👈 这里区分标签
                                 })
-        
-        print(f"DEBUG: 接口解析成功，有效商品数: {len(items)}")
-        return items
-    except Exception as e:
-        print(f"DEBUG: 解析异常: {e}")
-        return []
+                                count += 1
+            print(f"DEBUG: 【{channel_name}】抓取成功，商品数: {count}")
+        except Exception as e:
+            print(f"DEBUG: 【{channel_name}】解析异常: {e}")
+            
+    return all_items
 
 def load_history():
     if os.path.exists(DB_FILE):
@@ -108,7 +151,7 @@ def send_email(items, subject_text="优衣库折扣监控提醒"):
 #     raw_items = get_uniqlo_data()
 #     history = load_history()
     
-#     # 1. 定义分类容器
+#     # 1. 定义分类容器，确保所有商品都有归属
 #     categories = {
 #         "女装": [],
 #         "男装": [],
@@ -132,7 +175,7 @@ def send_email(items, subject_text="优衣库折扣监控提醒"):
 #                 "link": item.get('link', f"https://www.uniqlo.cn/product-detail.html?productCode={p_id}")
 #             }
             
-#             # 2. 根据名称自动分类
+#             # 2. 根据名称自动分类（优衣库名称通常自带分类标签）
 #             if "童装" in name or "幼儿" in name or "婴儿" in name:
 #                 categories["童装"].append(product_data)
 #             elif "女装" in name:
@@ -140,41 +183,40 @@ def send_email(items, subject_text="优衣库折扣监控提醒"):
 #             elif "男装" in name:
 #                 categories["男装"].append(product_data)
 #             else:
-#                 # 如果都没匹配到，默认放进男装或新增一个“其他”
+#                 # 无法识别的暂时放入男装分类
 #                 categories["男装"].append(product_data)
                 
-#             history[p_id] = price # 更新记忆
+#             history[p_id] = price # 更新本地记忆
 
-#     # 3. 分类别发送邮件
+#     # 3. 分类别发送邮件（对应你之前看到的错误，这里现在传两个参数）
 #     has_sent_any = False
 #     for cat_name, items in categories.items():
 #         if items:
 #             print(f"准备推送【{cat_name}】共 {len(items)} 件商品")
 #             try:
-#                 # 修改邮件标题，带上分类名
+#                 # 构造分类标题，例如：优衣库折扣提醒 - 女装
 #                 subject = f"优衣库折扣提醒 - {cat_name}"
-#                 send_email(items, subject) # 注意：这里给send_email增加了一个参数
+#                 # 调用你刚才修改好的支持两个参数的 send_email
+#                 send_email(items, subject) 
 #                 has_sent_any = True
 #             except Exception as e:
 #                 print(f"【{cat_name}】邮件发送失败: {e}")
 
-#     # 4. 只要有任何一封邮件发成功了，就更新历史记录
+#     # 4. 只要有任何一封邮件发成功了，就更新历史记录防止重复
 #     if has_sent_any:
 #         with open(DB_FILE, 'w', encoding='utf-8') as f:
 #             json.dump(history, f, ensure_ascii=False, indent=4)
-#         print("历史记录已更新")
+#         print("✅ 历史记录已更新")
 #     else:
 #         print("没有新折扣，无需发送。")
 def main():
-    raw_items = get_uniqlo_data()
+    # 1. 调用支持多频道抓取的函数 (获取限时特优+超值精选)
+    raw_items = get_all_uniqlo_data()
     history = load_history()
     
-    # 1. 定义分类容器，确保所有商品都有归属
-    categories = {
-        "女装": [],
-        "男装": [],
-        "童装": []
-    }
+    # 2. 定义分类容器：按“频道-性别”动态分类
+    # 结果会像这样：categories["✨限时特优 - 女装"] = [...]
+    categories = {}
     
     print(f"DEBUG: 开始对比 {len(raw_items)} 件商品与历史记录")
     
@@ -182,45 +224,43 @@ def main():
         p_id = str(item['productCode'])
         price = float(item['price'])
         name = item.get('name', '')
+        channel_tag = item.get('tag', '✨折扣单品') # 区分是限时特优还是超值精选
         
         # 状态对比：如果是新商品，或者价格比上次推送时更低
         if p_id not in history or price < history[p_id]:
-            product_data = {
-                "tag": item.get('tag', '🔥限时特优'),
-                "name": name,
-                "price": price,
-                "origin": item.get('origin', price),
-                "link": item.get('link', f"https://www.uniqlo.cn/product-detail.html?productCode={p_id}")
-            }
-            
-            # 2. 根据名称自动分类（优衣库名称通常自带分类标签）
+            # 自动识别性别
+            gender = "其他"
             if "童装" in name or "幼儿" in name or "婴儿" in name:
-                categories["童装"].append(product_data)
+                gender = "童装"
             elif "女装" in name:
-                categories["女装"].append(product_data)
+                gender = "女装"
             elif "男装" in name:
-                categories["男装"].append(product_data)
-            else:
-                # 无法识别的暂时放入男装分类
-                categories["男装"].append(product_data)
-                
+                gender = "男装"
+            
+            # 构造唯一的分类 Key
+            cat_key = f"{channel_tag} - {gender}"
+            
+            if cat_key not in categories:
+                categories[cat_key] = []
+            
+            categories[cat_key].append(item)
             history[p_id] = price # 更新本地记忆
 
-    # 3. 分类别发送邮件（对应你之前看到的错误，这里现在传两个参数）
+    # 3. 分类别发送邮件
     has_sent_any = False
-    for cat_name, items in categories.items():
+    for cat_title, items in categories.items():
         if items:
-            print(f"准备推送【{cat_name}】共 {len(items)} 件商品")
+            print(f"准备推送【{cat_title}】共 {len(items)} 件商品")
             try:
-                # 构造分类标题，例如：优衣库折扣提醒 - 女装
-                subject = f"优衣库折扣提醒 - {cat_name}"
-                # 调用你刚才修改好的支持两个参数的 send_email
+                # 邮件标题会自动变为：优衣库折扣提醒 - ✨限时特优 - 女装
+                subject = f"优衣库折扣提醒 - {cat_title}"
+                # 确保你的 send_email 已经改成了支持两个参数的版本
                 send_email(items, subject) 
                 has_sent_any = True
             except Exception as e:
-                print(f"【{cat_name}】邮件发送失败: {e}")
+                print(f"【{cat_title}】邮件发送失败: {e}")
 
-    # 4. 只要有任何一封邮件发成功了，就更新历史记录防止重复
+    # 4. 只要有任何一封邮件发成功了，就更新历史记录
     if has_sent_any:
         with open(DB_FILE, 'w', encoding='utf-8') as f:
             json.dump(history, f, ensure_ascii=False, indent=4)
