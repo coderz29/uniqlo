@@ -92,42 +92,104 @@ def send_email(items):
         print(f"邮件发送失败的具体原因: {e}")
         raise e
 
+# def main():
+#     raw_items = get_uniqlo_data()
+#     history = load_history()
+#     to_push = []
+    
+#     print(f"DEBUG: 开始对比 {len(raw_items)} 件商品与历史记录")
+    
+#     for item in raw_items:
+#         p_id = str(item['productCode'])
+#         # 注意：这里改用 get_uniqlo_data 函数中定义的键名 'price'
+#         price = float(item['price'])
+        
+#         # 只要抓取到了，就默认它是折扣商品（因为接口本身就是限时特优）
+#         # 状态对比：如果是新商品，或者价格比上次推送时更低
+#         if p_id not in history or price < history[p_id]:
+#             to_push.append({
+#                 "tag": item.get('tag', '🔥限时特优'),
+#                 "name": item.get('name', '优衣库单品'),
+#                 "price": price,
+#                 "origin": item.get('origin', price),
+#                 "link": item.get('link', f"https://www.uniqlo.cn/product-detail.html?productCode={p_id}")
+#             })
+#             history[p_id] = price # 更新记忆
+
+#     if to_push:
+#         # to_push = to_push[:5]  # 👈 临时加这一行，只发前5个，看看能不能成功
+#         print(f"准备推送 {len(to_push)} 件商品")
+#         # 尝试发送邮件
+#         try:
+#             send_email(to_push)
+#             # 只有邮件发送成功后，才更新本地历史记录
+#             with open(DB_FILE, 'w', encoding='utf-8') as f:
+#                 json.dump(history, f, ensure_ascii=False, indent=4)
+#             print("历史记录已更新")
+#         except Exception as e:
+#             print(f"邮件发送失败，不更新历史记录，下次将重试: {e}")
+#     else:
+#         print("没有新折扣，无需发送。")
+
 def main():
     raw_items = get_uniqlo_data()
     history = load_history()
-    to_push = []
+    
+    # 1. 定义分类容器
+    categories = {
+        "女装": [],
+        "男装": [],
+        "童装": []
+    }
     
     print(f"DEBUG: 开始对比 {len(raw_items)} 件商品与历史记录")
     
     for item in raw_items:
         p_id = str(item['productCode'])
-        # 注意：这里改用 get_uniqlo_data 函数中定义的键名 'price'
         price = float(item['price'])
+        name = item.get('name', '')
         
-        # 只要抓取到了，就默认它是折扣商品（因为接口本身就是限时特优）
         # 状态对比：如果是新商品，或者价格比上次推送时更低
         if p_id not in history or price < history[p_id]:
-            to_push.append({
+            product_data = {
                 "tag": item.get('tag', '🔥限时特优'),
-                "name": item.get('name', '优衣库单品'),
+                "name": name,
                 "price": price,
                 "origin": item.get('origin', price),
                 "link": item.get('link', f"https://www.uniqlo.cn/product-detail.html?productCode={p_id}")
-            })
+            }
+            
+            # 2. 根据名称自动分类
+            if "童装" in name or "幼儿" in name or "婴儿" in name:
+                categories["童装"].append(product_data)
+            elif "女装" in name:
+                categories["女装"].append(product_data)
+            elif "男装" in name:
+                categories["男装"].append(product_data)
+            else:
+                # 如果都没匹配到，默认放进男装或新增一个“其他”
+                categories["男装"].append(product_data)
+                
             history[p_id] = price # 更新记忆
 
-    if to_push:
-        # to_push = to_push[:5]  # 👈 临时加这一行，只发前5个，看看能不能成功
-        print(f"准备推送 {len(to_push)} 件商品")
-        # 尝试发送邮件
-        try:
-            send_email(to_push)
-            # 只有邮件发送成功后，才更新本地历史记录
-            with open(DB_FILE, 'w', encoding='utf-8') as f:
-                json.dump(history, f, ensure_ascii=False, indent=4)
-            print("历史记录已更新")
-        except Exception as e:
-            print(f"邮件发送失败，不更新历史记录，下次将重试: {e}")
+    # 3. 分类别发送邮件
+    has_sent_any = False
+    for cat_name, items in categories.items():
+        if items:
+            print(f"准备推送【{cat_name}】共 {len(items)} 件商品")
+            try:
+                # 修改邮件标题，带上分类名
+                subject = f"优衣库折扣提醒 - {cat_name}"
+                send_email(items, subject) # 注意：这里给send_email增加了一个参数
+                has_sent_any = True
+            except Exception as e:
+                print(f"【{cat_name}】邮件发送失败: {e}")
+
+    # 4. 只要有任何一封邮件发成功了，就更新历史记录
+    if has_sent_any:
+        with open(DB_FILE, 'w', encoding='utf-8') as f:
+            json.dump(history, f, ensure_ascii=False, indent=4)
+        print("历史记录已更新")
     else:
         print("没有新折扣，无需发送。")
 
