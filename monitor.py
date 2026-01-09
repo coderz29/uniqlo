@@ -14,51 +14,45 @@ SMTP_SERVER = "smtp.qq.com"  # 如果用Gmail或163请更换地址
 DB_FILE = "sent_products.json"
 
 def get_uniqlo_data():
-    """完全适配你截图中的 JSON 结构"""
     url = "https://www.uniqlo.cn/data/pages/timelimit.html.json"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
-    
     try:
         res = requests.get(url, headers=headers, timeout=15)
-        # 打印状态码，确保接口没封我们
-        print(f"DEBUG: 接口返回状态码: {res.status_code}")
-        
         data = res.json()
         items = []
         
-        # 遍历所有 section (对应你截图中的 section09, section66 等)
         for key in data:
             if key.startswith('section'):
-                section_data = data[key]
-                # 关键：根据你的截图，商品列表直接在 section 字典里
-                # 我们尝试从几种可能的路径提取列表
-                raw_list = []
-                if isinstance(section_data, list):
-                    raw_list = section_data
-                elif isinstance(section_data, dict):
-                    # 有些结构是在 items 键下，有些直接在 section 根部
-                    raw_list = section_data.get('items', [])
+                section_val = data[key]
                 
+                # 核心修正：props 直接在 section 下面，不在 component 下面
+                # 路径：sectionXX -> props -> items
+                props = section_val.get('props', {})
+                raw_list = props.get('items', [])
+                
+                # 如果这个 section 没找到，尝试另一种常见的嵌套可能
+                if not raw_list and 'component' in section_val:
+                    # 极少数情况下优衣库会把 props 塞进 component 字典
+                    raw_list = section_val.get('component', {}).get('props', {}).get('items', [])
+
                 for row in raw_list:
-                    # 匹配你截图中的字段名：productCode, price, productName
                     p_code = row.get('productCode')
                     if p_code:
                         items.append({
                             "productCode": str(p_code),
                             "name": row.get('productName', '优衣库单品'),
                             "price": float(row.get('price', 0)),
-                            "origin": row.get('originPrice', row.get('price')), # 如果没有原价则用现价代替
-                            "pic": f"https:{row.get('mainPic')}" if row.get('mainPic') else "",
+                            "origin": row.get('originPrice', row.get('price')),
                             "link": f"https://www.uniqlo.cn/product-detail.html?productCode={p_code}",
                             "tag": "🔥限时特优"
                         })
         
-        print(f"DEBUG: 总共提取到 {len(items)} 个商品数据")
+        print(f"DEBUG: 接口状态码: {res.status_code}, 提取商品数: {len(items)}")
         return items
     except Exception as e:
-        print(f"DEBUG: 抓取解析出错: {e}")
+        print(f"DEBUG: 解析异常: {e}")
         return []
 
 def load_history():
