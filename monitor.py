@@ -23,33 +23,32 @@ def get_uniqlo_data():
         data = res.json()
         items = []
         
-        for key in data:
-            if key.startswith('section'):
-                section_val = data[key]
+        # 遍历所有键值对
+        for key, section_val in data.items():
+            # 关键：只有当 key 以 section 开头，且内容确实是【字典】时才处理
+            if key.startswith('section') and isinstance(section_val, dict):
                 
-                # 核心修正：props 直接在 section 下面，不在 component 下面
-                # 路径：sectionXX -> props -> items
-                props = section_val.get('props', {})
-                raw_list = props.get('items', [])
+                # 按照截图路径：sectionXX -> props -> items
+                props = section_val.get('props')
                 
-                # 如果这个 section 没找到，尝试另一种常见的嵌套可能
-                if not raw_list and 'component' in section_val:
-                    # 极少数情况下优衣库会把 props 塞进 component 字典
-                    raw_list = section_val.get('component', {}).get('props', {}).get('items', [])
-
-                for row in raw_list:
-                    p_code = row.get('productCode')
-                    if p_code:
-                        items.append({
-                            "productCode": str(p_code),
-                            "name": row.get('productName', '优衣库单品'),
-                            "price": float(row.get('price', 0)),
-                            "origin": row.get('originPrice', row.get('price')),
-                            "link": f"https://www.uniqlo.cn/product-detail.html?productCode={p_code}",
-                            "tag": "🔥限时特优"
-                        })
+                # 再次确保 props 也是字典
+                if isinstance(props, dict):
+                    raw_list = props.get('items', [])
+                    
+                    if isinstance(raw_list, list):
+                        for row in raw_list:
+                            p_code = row.get('productCode')
+                            if p_code:
+                                items.append({
+                                    "productCode": str(p_code),
+                                    "name": row.get('productName', '优衣库单品'),
+                                    "price": float(row.get('price', 0)),
+                                    "origin": row.get('originPrice', row.get('price')),
+                                    "link": f"https://www.uniqlo.cn/product-detail.html?productCode={p_code}",
+                                    "tag": "🔥限时特优"
+                                })
         
-        print(f"DEBUG: 接口状态码: {res.status_code}, 提取商品数: {len(items)}")
+        print(f"DEBUG: 接口解析成功，有效商品数: {len(items)}")
         return items
     except Exception as e:
         print(f"DEBUG: 解析异常: {e}")
