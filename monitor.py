@@ -61,13 +61,15 @@ def load_history():
     return {}
 
 def send_email(items):
-    smtp_server = os.environ.get('SMTP_SERVER')
+    # smtp_server = os.environ.get('SMTP_SERVER')
+    smtp_server = "smtp.163.com"
     # 强制尝试 465 端口 + SSL
     smtp_port = 465 
     sender = os.environ.get('EMAIL_SENDER')
     password = os.environ.get('EMAIL_PASSWORD') # 必须是 16 位授权码
     receiver = os.environ.get('EMAIL_RECEIVER')
-
+    
+    print(f"DEBUG: 正在尝试连接服务器: {smtp_server}")
     # 构造简单的邮件正文
     content = "发现以下优衣库折扣：\n\n"
     for item in items:
