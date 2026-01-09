@@ -14,19 +14,46 @@ SMTP_SERVER = "smtp.qq.com"  # 如果用Gmail或163请更换地址
 DB_FILE = "sent_products.json"
 
 def get_uniqlo_data():
-    """抓取优衣库数据（此处逻辑需根据实际API微调）"""
-    # 示例 API 地址（建议通过小程序抓包获得最准确的接口）
-    url = "https://d.uniqlo.cn/p/search/render/limited-promotion"
+    url = "https://www.uniqlo.cn/data/pages/timelimit.html.json"
     headers = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
+    
     try:
         res = requests.get(url, headers=headers, timeout=15)
-        # 假设返回结构中包含商品列表
-        items = res.json().get('resp', [{}])[0].get('productList', [])
+        data = res.json()
+        items = []
+        
+        # 遍历所有的 section
+        for section_key, section_value in data.items():
+            if not section_key.startswith('section'):
+                continue
+                
+            # 获取该 section 下的所有 items
+            raw_items = section_value.get('items', [])
+            
+            # 如果 items 里没东西，尝试去 component/props/items 里找（部分楼层结构不同）
+            if not raw_items:
+                raw_items = section_value.get('component', {}).get('props', {}).get('items', [])
+
+            for row in raw_items:
+                p_code = row.get('productCode')
+                if p_code:
+                    items.append({
+                        "productCode": str(p_code),
+                        "name": row.get('productName', '未知商品'),
+                        "price": float(row.get('price', 0)),
+                        # 假设原价没在 JSON 里，我们设为价格本身，或者你可以根据业务逻辑处理
+                        "origin": row.get('originPrice', row.get('price')), 
+                        "pic": f"https:{row.get('mainPic')}" if row.get('mainPic') else "",
+                        "link": f"https://www.uniqlo.cn/product-detail.html?productCode={p_code}",
+                        "tag": "🔥限时特优"
+                    })
+        
+        print(f"DEBUG: 成功从 JSON 中提取到 {len(items)} 个商品")
         return items
     except Exception as e:
-        print(f"抓取失败: {e}")
+        print(f"DEBUG: 解析失败: {e}")
         return []
 
 def load_history():
