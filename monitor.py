@@ -61,29 +61,34 @@ def load_history():
     return {}
 
 def send_email(items):
-    if not items: return
-    
-    # 构建 HTML 内容
-    rows = ""
-    for item in items:
-        rows += f"""
-        <tr>
-            <td style="padding:10px; border-bottom:1px solid #ddd;"><b>{item['tag']}</b></td>
-            <td style="padding:10px; border-bottom:1px solid #ddd;">{item['name']}</td>
-            <td style="padding:10px; border-bottom:1px solid #ddd; color:red;">¥{item['price']} (原价¥{item['origin']})</td>
-            <td style="padding:10px; border-bottom:1px solid #ddd;"><a href="{item['link']}">立即查看</a></td>
-        </tr>"""
-    
-    html = f"<h3>优衣库折扣监控日报</h3><table border='1' style='border-collapse:collapse;'>{rows}</table>"
-    msg = MIMEText(html, 'html', 'utf-8')
-    msg['From'] = EMAIL_SENDER
-    msg['To'] = EMAIL_RECEIVER
-    msg['Subject'] = Header(f"🔥 发现 {len(items)} 件优衣库新折扣！", 'utf-8')
+    smtp_server = os.environ.get('SMTP_SERVER')
+    # 强制尝试 465 端口 + SSL
+    smtp_port = 465 
+    sender = os.environ.get('EMAIL_SENDER')
+    password = os.environ.get('EMAIL_PASSWORD') # 必须是 16 位授权码
+    receiver = os.environ.get('EMAIL_RECEIVER')
 
-    server = smtplib.SMTP_SSL(SMTP_SERVER, 465)
-    server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-    server.sendmail(EMAIL_SENDER, [EMAIL_RECEIVER], msg.as_string())
-    server.quit()
+    # 构造简单的邮件正文
+    content = "发现以下优衣库折扣：\n\n"
+    for item in items:
+        content += f"【{item['tag']}】{item['name']}\n价格：{item['price']} (原价：{item['origin']})\n链接：{item['link']}\n\n"
+
+    msg = MIMEText(content, 'plain', 'utf-8')
+    msg['From'] = sender
+    msg['To'] = receiver
+    msg['Subject'] = Header('优衣库折扣监控提醒', 'utf-8')
+
+    # 【关键修改点】使用 SMTP_SSL 建立连接
+    try:
+        print(f"DEBUG: 正在连接 {smtp_server}:{smtp_port}...")
+        server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=20) 
+        server.login(sender, password)
+        server.sendmail(sender, [receiver], msg.as_string())
+        server.quit()
+        print("邮件发送成功！")
+    except Exception as e:
+        print(f"邮件发送失败的具体原因: {e}")
+        raise e
 
 def main():
     raw_items = get_uniqlo_data()
