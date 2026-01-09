@@ -90,31 +90,36 @@ def main():
     history = load_history()
     to_push = []
     
+    print(f"DEBUG: 开始对比 {len(raw_items)} 件商品与历史记录")
+    
     for item in raw_items:
-        tags = str(item.get('identity_tags', []))
-        is_limited = "限时特优" in tags
-        is_value = "超值精选" in tags
+        p_id = str(item['productCode'])
+        # 注意：这里改用 get_uniqlo_data 函数中定义的键名 'price'
+        price = float(item['price'])
         
-        if is_limited or is_value:
-            p_id = str(item['productCode'])
-            price = float(item['minPrice'])
-            
-            # 状态对比：如果是新商品，或者价格比上次推送时更低
-            if p_id not in history or price < history[p_id]:
-                to_push.append({
-                    "tag": "🔥限时特优" if is_limited else "💰超值精选",
-                    "name": item['productName'],
-                    "price": price,
-                    "origin": item['originPrice'],
-                    "link": f"https://www.uniqlo.cn/product-detail.html?productCode={p_id}"
-                })
-                history[p_id] = price # 更新记忆
+        # 只要抓取到了，就默认它是折扣商品（因为接口本身就是限时特优）
+        # 状态对比：如果是新商品，或者价格比上次推送时更低
+        if p_id not in history or price < history[p_id]:
+            to_push.append({
+                "tag": item.get('tag', '🔥限时特优'),
+                "name": item.get('name', '优衣库单品'),
+                "price": price,
+                "origin": item.get('origin', price),
+                "link": item.get('link', f"https://www.uniqlo.cn/product-detail.html?productCode={p_id}")
+            })
+            history[p_id] = price # 更新记忆
 
     if to_push:
         print(f"准备推送 {len(to_push)} 件商品")
-        send_email(to_push)
-        with open(DB_FILE, 'w', encoding='utf-8') as f:
-            json.dump(history, f, ensure_ascii=False, indent=4)
+        # 尝试发送邮件
+        try:
+            send_email(to_push)
+            # 只有邮件发送成功后，才更新本地历史记录
+            with open(DB_FILE, 'w', encoding='utf-8') as f:
+                json.dump(history, f, ensure_ascii=False, indent=4)
+            print("历史记录已更新")
+        except Exception as e:
+            print(f"邮件发送失败，不更新历史记录，下次将重试: {e}")
     else:
         print("没有新折扣，无需发送。")
 
