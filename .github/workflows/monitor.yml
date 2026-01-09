@@ -1,0 +1,40 @@
+name: Uniqlo Discount Bot
+
+on:
+  schedule:
+    - cron: '0 1,9,18 * * *' # 每天北京时间 9:00, 17:00, 02:00 运行
+  workflow_dispatch: # 允许你手动点击运行测试
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # 授予 Actions 写入仓库的权限（非常重要）
+    permissions:
+      contents: write
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run Monitor Script
+        env:
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
+        run: python monitor.py
+
+      - name: Save memory (Commit and Push)
+        run: |
+          git config --global user.name "GithubActionsBot"
+          git config --global user.email "actions@github.com"
+          git add sent_products.json
+          # 如果文件没有变动（没有新折扣），git commit 会报错，所以加个判断
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update discount history" && git push)
