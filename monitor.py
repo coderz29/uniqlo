@@ -76,6 +76,7 @@ def send_email(items):
         content += f"【{item['tag']}】{item['name']}\n价格：{item['price']} (原价：{item['origin']})\n链接：{item['link']}\n\n"
 
     msg = MIMEText(content, 'plain', 'utf-8')
+    msg['Subject'] = Header(subject_text, 'utf-8')
     msg['From'] = sender
     msg['To'] = receiver
     msg['Subject'] = Header('优衣库折扣监控提醒', 'utf-8')
