@@ -148,15 +148,13 @@ def send_email(items, subject_text="优衣库折扣监控提醒"):
         raise e
 
 # def main():
-#     raw_items = get_uniqlo_data()
+#     # 1. 调用支持多频道抓取的函数 (获取限时特优+超值精选)
+#     raw_items = get_all_uniqlo_data()
 #     history = load_history()
     
-#     # 1. 定义分类容器，确保所有商品都有归属
-#     categories = {
-#         "女装": [],
-#         "男装": [],
-#         "童装": []
-#     }
+#     # 2. 定义分类容器：按“频道-性别”动态分类
+#     # 结果会像这样：categories["✨限时特优 - 女装"] = [...]
+#     categories = {}
     
 #     print(f"DEBUG: 开始对比 {len(raw_items)} 件商品与历史记录")
     
@@ -164,45 +162,43 @@ def send_email(items, subject_text="优衣库折扣监控提醒"):
 #         p_id = str(item['productCode'])
 #         price = float(item['price'])
 #         name = item.get('name', '')
+#         channel_tag = item.get('tag', '✨折扣单品') # 区分是限时特优还是超值精选
         
 #         # 状态对比：如果是新商品，或者价格比上次推送时更低
 #         if p_id not in history or price < history[p_id]:
-#             product_data = {
-#                 "tag": item.get('tag', '🔥限时特优'),
-#                 "name": name,
-#                 "price": price,
-#                 "origin": item.get('origin', price),
-#                 "link": item.get('link', f"https://www.uniqlo.cn/product-detail.html?productCode={p_id}")
-#             }
-            
-#             # 2. 根据名称自动分类（优衣库名称通常自带分类标签）
+#             # 自动识别性别
+#             gender = "其他"
 #             if "童装" in name or "幼儿" in name or "婴儿" in name:
-#                 categories["童装"].append(product_data)
+#                 gender = "童装"
 #             elif "女装" in name:
-#                 categories["女装"].append(product_data)
+#                 gender = "女装"
 #             elif "男装" in name:
-#                 categories["男装"].append(product_data)
-#             else:
-#                 # 无法识别的暂时放入男装分类
-#                 categories["男装"].append(product_data)
-                
+#                 gender = "男装"
+            
+#             # 构造唯一的分类 Key
+#             cat_key = f"{channel_tag} - {gender}"
+            
+#             if cat_key not in categories:
+#                 categories[cat_key] = []
+            
+#             categories[cat_key].append(item)
 #             history[p_id] = price # 更新本地记忆
 
-#     # 3. 分类别发送邮件（对应你之前看到的错误，这里现在传两个参数）
+#     # 3. 分类别发送邮件
 #     has_sent_any = False
-#     for cat_name, items in categories.items():
+#     for cat_title, items in categories.items():
 #         if items:
-#             print(f"准备推送【{cat_name}】共 {len(items)} 件商品")
+#             print(f"准备推送【{cat_title}】共 {len(items)} 件商品")
 #             try:
-#                 # 构造分类标题，例如：优衣库折扣提醒 - 女装
-#                 subject = f"优衣库折扣提醒 - {cat_name}"
-#                 # 调用你刚才修改好的支持两个参数的 send_email
+#                 # 邮件标题会自动变为：优衣库折扣提醒 - ✨限时特优 - 女装
+#                 subject = f"优衣库折扣提醒 - {cat_title}"
+#                 # 确保你的 send_email 已经改成了支持两个参数的版本
 #                 send_email(items, subject) 
 #                 has_sent_any = True
 #             except Exception as e:
-#                 print(f"【{cat_name}】邮件发送失败: {e}")
+#                 print(f"【{cat_title}】邮件发送失败: {e}")
 
-#     # 4. 只要有任何一封邮件发成功了，就更新历史记录防止重复
+#     # 4. 只要有任何一封邮件发成功了，就更新历史记录
 #     if has_sent_any:
 #         with open(DB_FILE, 'w', encoding='utf-8') as f:
 #             json.dump(history, f, ensure_ascii=False, indent=4)
@@ -210,63 +206,65 @@ def send_email(items, subject_text="优衣库折扣监控提醒"):
 #     else:
 #         print("没有新折扣，无需发送。")
 def main():
-    # 1. 调用支持多频道抓取的函数 (获取限时特优+超值精选)
+    # 1. 获取所有频道数据（限时+超值）
     raw_items = get_all_uniqlo_data()
     history = load_history()
     
-    # 2. 定义分类容器：按“频道-性别”动态分类
-    # 结果会像这样：categories["✨限时特优 - 女装"] = [...]
     categories = {}
     
-    print(f"DEBUG: 开始对比 {len(raw_items)} 件商品与历史记录")
+    print(f"DEBUG: 开始对比 {len(raw_items)} 件商品")
     
     for item in raw_items:
         p_id = str(item['productCode'])
         price = float(item['price'])
         name = item.get('name', '')
-        channel_tag = item.get('tag', '✨折扣单品') # 区分是限时特优还是超值精选
+        channel_tag = item.get('tag', '✨折扣')
         
-        # 状态对比：如果是新商品，或者价格比上次推送时更低
+        # 价格变动或新商品逻辑
         if p_id not in history or price < history[p_id]:
-            # 自动识别性别
-            gender = "其他"
-            if "童装" in name or "幼儿" in name or "婴儿" in name:
-                gender = "童装"
-            elif "女装" in name:
-                gender = "女装"
-            elif "男装" in name:
-                gender = "男装"
+            # --- 优化后的性别识别逻辑 ---
+            genders = []
+            if any(k in name for k in ["童装", "幼儿", "婴儿", "初生儿"]):
+                genders.append("童装")
             
-            # 构造唯一的分类 Key
-            cat_key = f"{channel_tag} - {gender}"
+            # 如果名字里同时有“男装”和“女装”，标记为“男女同款”
+            if "男装" in name and "女装" in name:
+                genders.append("男女同款")
+            else:
+                if "女装" in name: genders.append("女装")
+                if "男装" in name: genders.append("男装")
             
-            if cat_key not in categories:
-                categories[cat_key] = []
+            # 如果啥都没匹配到，归类为“其他”
+            if not genders:
+                genders.append("其他")
             
-            categories[cat_key].append(item)
-            history[p_id] = price # 更新本地记忆
+            # 为每个匹配到的性别分类添加商品
+            for g in genders:
+                cat_key = f"{channel_tag} - {g}"
+                if cat_key not in categories:
+                    categories[cat_key] = []
+                categories[cat_key].append(item)
+            
+            history[p_id] = price 
 
-    # 3. 分类别发送邮件
+    # 3. 发送邮件逻辑
     has_sent_any = False
     for cat_title, items in categories.items():
         if items:
             print(f"准备推送【{cat_title}】共 {len(items)} 件商品")
             try:
-                # 邮件标题会自动变为：优衣库折扣提醒 - ✨限时特优 - 女装
                 subject = f"优衣库折扣提醒 - {cat_title}"
-                # 确保你的 send_email 已经改成了支持两个参数的版本
                 send_email(items, subject) 
                 has_sent_any = True
             except Exception as e:
-                print(f"【{cat_title}】邮件发送失败: {e}")
+                print(f"❌ 【{cat_title}】发送失败: {e}")
 
-    # 4. 只要有任何一封邮件发成功了，就更新历史记录
     if has_sent_any:
         with open(DB_FILE, 'w', encoding='utf-8') as f:
             json.dump(history, f, ensure_ascii=False, indent=4)
-        print("✅ 历史记录已更新")
+        print("✅ 监控完成，历史记录已更新")
     else:
-        print("没有新折扣，无需发送。")
+        print("☕ 没有新折扣。")
 
 if __name__ == "__main__":
     main()
