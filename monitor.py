@@ -118,19 +118,27 @@ def load_history():
 #         print(f"❌ 邮件【{subject_text}】发送失败: {e}")
 #         # 抛出异常让 main 函数知道，从而不更新 history 文件
 #         raise e
+import smtplib
+from email.mime.text import MIMEText
+from email.header import Header
+
 def send_email(items, subject_text):
+    # 配置服务器信息
+    smtp_server = "smtp.163.com"
+    smtp_port = 587  # 👈 核心修改：改用 587 端口
     sender = os.environ.get('EMAIL_SENDER')
     password = os.environ.get('EMAIL_PASSWORD')
     receiver = os.environ.get('EMAIL_RECEIVER')
 
-    # 构造极简文字内容
+    # 构造文字内容
     content = f"【{subject_text}】\n"
-    content += "---------------------------\n"
+    content += "===========================\n"
     for item in items:
-        content += f"▶ {item['tag']} | {item['name']}\n"
-        content += f"   价格：¥{item['price']} (原价: ¥{item['origin']})\n"
-        content += f"   链接：{item['link']}\n\n"
-    content += "---------------------------\n"
+        # 保持分类显示：女装/男装/童装/男女同款
+        content += f"▶ {item.get('tag', '✨折扣')} | {item.get('name', '')}\n"
+        content += f"   现价：¥{item.get('price')} (原价: ¥{item.get('origin')})\n"
+        content += f"   链接：{item.get('link')}\n\n"
+    content += "===========================\n"
 
     msg = MIMEText(content, 'plain', 'utf-8')
     msg['Subject'] = Header(subject_text, 'utf-8')
@@ -138,15 +146,25 @@ def send_email(items, subject_text):
     msg['To'] = receiver
 
     try:
-        # 使用最稳妥的 SSL 连接
-        server = smtplib.SMTP_SSL("smtp.qq.com", 465, timeout=30)
+        # 👈 核心修改：使用 STARTTLS 模式
+        server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
+        server.starttls() # 启动安全传输层
         server.login(sender, password)
         server.sendmail(sender, receiver.split(','), msg.as_string())
         server.quit()
-        print(f"✅ {subject_text} 发送成功")
+        print(f"✅ {subject_text} 发送成功 (端口 587)")
     except Exception as e:
-        print(f"❌ 发送失败: {e}")
-        raise e
+        print(f"❌ 端口 587 发送失败，尝试 465: {e}")
+        # 如果 587 还不行，再自动退回到 465 试最后一次
+        try:
+            server_465 = smtplib.SMTP_SSL(smtp_server, 465, timeout=30)
+            server_465.login(sender, password)
+            server_465.sendmail(sender, receiver.split(','), msg.as_string())
+            server_465.quit()
+            print(f"✅ {subject_text} 在 465 端口成功发送")
+        except Exception as e2:
+            print(f"❌ 所有端口均失效: {e2}")
+            raise e2
 
 # def main():
 #     # 1. 获取所有数据（自动包含限时和超值两个频道）
