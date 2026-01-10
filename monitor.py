@@ -118,9 +118,6 @@ def load_history():
 #         print(f"❌ 邮件【{subject_text}】发送失败: {e}")
 #         # 抛出异常让 main 函数知道，从而不更新 history 文件
 #         raise e
-import smtplib
-from email.mime.text import MIMEText
-from email.header import Header
 
 def send_email(items, subject_text):
     # 配置服务器信息
@@ -238,39 +235,81 @@ def send_email(items, subject_text):
 #     else:
 #         print("☕ 没有新折扣。")
 def main():
+    # 1. 获取所有数据
     raw_items = get_all_uniqlo_data()
     history = load_history()
-    new_discounts = []
+    
+    # 2. 分类容器：把商品按“频道-性别”完全分开
+    categories = {}
+    
+    print(f"DEBUG: 开始对比 {len(raw_items)} 件商品")
     
     for item in raw_items:
         p_id = str(item.get('productCode'))
         price = float(item.get('price', 0))
+        name = item.get('name', '')
+        channel_tag = item.get('tag', '✨折扣')
+        
         if p_id not in history or price < history[p_id]:
-            new_discounts.append(item)
+            # --- 精准性别识别 ---
+            is_woman = "女装" in name
+            is_man = "男装" in name
+            is_child = any(k in name for k in ["童装", "幼儿", "婴儿", "初生儿"])
+            
+            assigned_genders = []
+            if is_child:
+                assigned_genders.append("童装")
+            
+            if is_woman and is_man:
+                assigned_genders.append("男女同款")
+            elif is_woman:
+                assigned_genders.append("女装")
+            elif is_man:
+                assigned_genders.append("男装")
+            
+            if not assigned_genders:
+                assigned_genders.append("其他")
+            
+            # 将商品放入对应的分类
+            for g_tag in assigned_genders:
+                cat_key = f"{channel_tag} - {g_tag}"
+                if cat_key not in categories:
+                    categories[cat_key] = []
+                categories[cat_key].append(item)
+            
             history[p_id] = price 
 
-    if new_discounts:
-        new_discounts.sort(key=lambda x: (x.get('tag', ''), x.get('name', '')))
-        
-        # 每封信发 100 件，文字版绝对不会超限
-        chunk_size = 100
-        chunks = [new_discounts[i:i + chunk_size] for i in range(0, len(new_discounts), chunk_size)]
-        
+    # 3. 分开发送邮件逻辑
+    if categories:
         has_sent_any = False
-        for index, chunk in enumerate(chunks):
+        cat_list = list(categories.keys())
+        total_cats = len(cat_list)
+        
+        for index, cat_title in enumerate(cat_list):
+            items = categories[cat_title]
+            print(f">>> 正在推送第 {index+1}/{total_cats} 个分类：【{cat_title}】共 {len(items)} 件")
+            
             try:
-                subject = f"优衣库折扣快报({index+1}/{len(chunks)})"
-                send_email(chunk, subject) 
+                subject = f"优衣库折扣提醒 - {cat_title}"
+                # 调用你当前的 send_email（建议保留 587 端口的文字版最稳）
+                send_email(items, subject) 
                 has_sent_any = True
-                time.sleep(5) # 稍微休息即可
+                
+                # 💡 核心：如果是分开发，必须给服务器留出足够的冷却时间
+                if index < total_chunks - 1:
+                    print(f"等待 15 秒后推送下一个分类...")
+                    time.sleep(15)
+                    
             except Exception as e:
-                print(f"重试中... {e}")
+                print(f"❌ 【{cat_title}】推送失败: {e}")
+                time.sleep(5) # 失败了也歇会
 
         if has_sent_any:
             with open(DB_FILE, 'w', encoding='utf-8') as f:
                 json.dump(history, f, ensure_ascii=False, indent=4)
+            print("✅ 历史记录已同步")
     else:
-        print("☕ 没有新折扣")
+        print("☕ 没有新折扣，无需发送。")
 
 if __name__ == "__main__":
     main()
