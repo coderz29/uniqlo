@@ -2,6 +2,7 @@ import requests
 import smtplib
 import json
 import os
+import time
 from email.mime.text import MIMEText
 from email.header import Header
 from email.mime.multipart import MIMEMultipart # 👈 需要新增这个导入
@@ -150,6 +151,18 @@ def send_email(items, subject_text="优衣库折扣监控提醒"):
     
     html_content += "</table></body></html>"
 
+    try:
+        # 每次发送都重新创建对象，确保连接新鲜
+        server = smtplib.SMTP_SSL("smtp.qq.com", 465, timeout=30) # 增加超时时间到 30s
+        server.login(sender, password)
+        server.sendmail(sender, receiver.split(','), msg.as_string())
+        server.quit() 
+        print(f"✅ 【{subject_text}】已成功送达")
+    except Exception as e:
+        # 如果是连接被关闭，打印更详细的提示
+        print(f"连接异常详情: {e}")
+        raise e
+
     # 2. 构造邮件对象（注意这里改用 MIMEMultipart）
     msg = MIMEMultipart()
     msg['From'] = sender
@@ -215,16 +228,22 @@ def main():
             history[p_id] = float(item['price'])
 
     # 3. 发送邮件逻辑
+    # 分类别发送邮件
     has_sent_any = False
     for cat_title, items in categories.items():
         if items:
-            print(f"准备推送【{cat_title}】共 {len(items)} 件商品")
+            print(f"正在准备推送【{cat_title}】...")
             try:
                 subject = f"优衣库折扣提醒 - {cat_title}"
                 send_email(items, subject) 
                 has_sent_any = True
+                
+                # 💡 关键修复：每发完一类，休息 5 秒，防止被邮箱服务器封禁
+                print(f"等待 5 秒后继续下一类...")
+                time.sleep(5) 
+                
             except Exception as e:
-                print(f"❌ 【{cat_title}】发送失败: {e}")
+                print(f"❌ 【{cat_title}】推送失败: {e}")
 
     if has_sent_any:
         with open(DB_FILE, 'w', encoding='utf-8') as f:
