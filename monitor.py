@@ -257,36 +257,46 @@ def send_email(items, subject_text="优衣库折扣监控提醒"):
 def main():
     raw_items = get_all_uniqlo_data()
     history = load_history()
-    
-    # 存放所有需要推送的新折扣商品
     new_discounts = []
     
     print(f"DEBUG: 开始对比 {len(raw_items)} 件商品")
-    
     for item in raw_items:
         p_id = str(item.get('productCode'))
         price = float(item.get('price', 0))
-        
         if p_id not in history or price < history[p_id]:
             new_discounts.append(item)
             history[p_id] = price 
 
     if new_discounts:
-        # 按照频道和性别对 new_discounts 进行简单的排序，方便阅读
-        new_discounts.sort(key=lambda x: (x.get('tag'), x.get('name')))
+        # 1. 排序：按频道和性别排序，让内容更有序
+        new_discounts.sort(key=lambda x: (x.get('tag', ''), x.get('name', '')))
         
-        print(f"🚀 发现 {len(new_discounts)} 件新折扣，准备合并发送单封邮件...")
-        try:
-            # 仅发送一次，标题固定
-            subject = f"优衣库折扣快报 - 发现 {len(new_discounts)} 件新单品"
-            send_email(new_discounts, subject) 
-            
-            # 发送成功后保存历史
+        # 2. 分页逻辑：每 50 个商品分成一组
+        chunk_size = 50
+        chunks = [new_discounts[i:i + chunk_size] for i in range(0, len(new_discounts), chunk_size)]
+        
+        total_chunks = len(chunks)
+        print(f"🚀 发现 {len(new_discounts)} 件新折扣，将分 {total_chunks} 封邮件发出...")
+        
+        has_sent_any = False
+        for index, chunk in enumerate(chunks):
+            try:
+                # 标题加上序号，方便识别
+                subject = f"优衣库折扣快报 ({index+1}/{total_chunks}) - 发现 {len(chunk)} 件单品"
+                send_email(chunk, subject) 
+                has_sent_any = True
+                
+                # 3. 每发完一小包，休息 10 秒，非常重要！
+                if index < total_chunks - 1:
+                    print(f"已发送第 {index+1} 份，休息 10 秒防止封禁...")
+                    time.sleep(10)
+            except Exception as e:
+                print(f"❌ 第 {index+1} 封邮件发送失败: {e}")
+
+        if has_sent_any:
             with open(DB_FILE, 'w', encoding='utf-8') as f:
                 json.dump(history, f, ensure_ascii=False, indent=4)
-            print("✅ 邮件已发出，历史记录同步完成")
-        except Exception as e:
-            print(f"❌ 邮件合并发送失败: {e}")
+            print("✅ 历史记录同步完成")
     else:
         print("☕ 没有发现新价格变动。")
 
