@@ -147,105 +147,49 @@ def send_email(items, subject_text="优衣库折扣监控提醒"):
         # 抛出异常让 main 函数知道，从而不更新 history 文件
         raise e
 
-# def main():
-#     # 1. 调用支持多频道抓取的函数 (获取限时特优+超值精选)
-#     raw_items = get_all_uniqlo_data()
-#     history = load_history()
-    
-#     # 2. 定义分类容器：按“频道-性别”动态分类
-#     # 结果会像这样：categories["✨限时特优 - 女装"] = [...]
-#     categories = {}
-    
-#     print(f"DEBUG: 开始对比 {len(raw_items)} 件商品与历史记录")
-    
-#     for item in raw_items:
-#         p_id = str(item['productCode'])
-#         price = float(item['price'])
-#         name = item.get('name', '')
-#         channel_tag = item.get('tag', '✨折扣单品') # 区分是限时特优还是超值精选
-        
-#         # 状态对比：如果是新商品，或者价格比上次推送时更低
-#         if p_id not in history or price < history[p_id]:
-#             # 自动识别性别
-#             gender = "其他"
-#             if "童装" in name or "幼儿" in name or "婴儿" in name:
-#                 gender = "童装"
-#             elif "女装" in name:
-#                 gender = "女装"
-#             elif "男装" in name:
-#                 gender = "男装"
-            
-#             # 构造唯一的分类 Key
-#             cat_key = f"{channel_tag} - {gender}"
-            
-#             if cat_key not in categories:
-#                 categories[cat_key] = []
-            
-#             categories[cat_key].append(item)
-#             history[p_id] = price # 更新本地记忆
-
-#     # 3. 分类别发送邮件
-#     has_sent_any = False
-#     for cat_title, items in categories.items():
-#         if items:
-#             print(f"准备推送【{cat_title}】共 {len(items)} 件商品")
-#             try:
-#                 # 邮件标题会自动变为：优衣库折扣提醒 - ✨限时特优 - 女装
-#                 subject = f"优衣库折扣提醒 - {cat_title}"
-#                 # 确保你的 send_email 已经改成了支持两个参数的版本
-#                 send_email(items, subject) 
-#                 has_sent_any = True
-#             except Exception as e:
-#                 print(f"【{cat_title}】邮件发送失败: {e}")
-
-#     # 4. 只要有任何一封邮件发成功了，就更新历史记录
-#     if has_sent_any:
-#         with open(DB_FILE, 'w', encoding='utf-8') as f:
-#             json.dump(history, f, ensure_ascii=False, indent=4)
-#         print("✅ 历史记录已更新")
-#     else:
-#         print("没有新折扣，无需发送。")
 def main():
-    # 1. 获取所有频道数据（限时+超值）
+    # 1. 获取所有数据（自动包含限时和超值两个频道）
     raw_items = get_all_uniqlo_data()
     history = load_history()
     
     categories = {}
     
-    print(f"DEBUG: 开始对比 {len(raw_items)} 件商品")
-    
     for item in raw_items:
-        p_id = str(item['productCode'])
-        price = float(item['price'])
+        p_id = str(item.get('productCode'))
         name = item.get('name', '')
-        channel_tag = item.get('tag', '✨折扣')
+        channel_tag = item.get('tag', '✨折扣') # 这里的 tag 会是 ✨限时特优 或 ✨超值精选
         
-        # 价格变动或新商品逻辑
-        if p_id not in history or price < history[p_id]:
-            # --- 优化后的性别识别逻辑 ---
-            genders = []
-            if any(k in name for k in ["童装", "幼儿", "婴儿", "初生儿"]):
-                genders.append("童装")
+        # 检查是否需要推送
+        if p_id not in history or float(item['price']) < history[p_id]:
             
-            # 如果名字里同时有“男装”和“女装”，标记为“男女同款”
-            if "男装" in name and "女装" in name:
-                genders.append("男女同款")
+            # --- 识别性别（多重判定逻辑） ---
+            is_woman = "女装" in name
+            is_man = "男装" in name
+            is_child = any(k in name for k in ["童装", "幼儿", "婴儿", "初生儿"])
+            
+            gender_tags = []
+            if is_child:
+                gender_tags.append("童装")
+            
+            # 核心修改：如果同时包含男和女，强制分入“男女同款”
+            if is_woman and is_man:
+                gender_tags.append("男女同款")
             else:
-                if "女装" in name: genders.append("女装")
-                if "男装" in name: genders.append("男装")
+                if is_woman: gender_tags.append("女装")
+                if is_man: gender_tags.append("男装")
             
-            # 如果啥都没匹配到，归类为“其他”
-            if not genders:
-                genders.append("其他")
+            if not gender_tags:
+                gender_tags.append("其他")
             
-            # 为每个匹配到的性别分类添加商品
-            for g in genders:
-                cat_key = f"{channel_tag} - {g}"
+            # --- 按照 (频道 + 性别) 进行归类 ---
+            for g_tag in gender_tags:
+                # 这样生成的标题会是：✨限时特优 - 男女同款
+                cat_key = f"{channel_tag} - {g_tag}"
                 if cat_key not in categories:
                     categories[cat_key] = []
                 categories[cat_key].append(item)
             
-            history[p_id] = price 
+            history[p_id] = float(item['price'])
 
     # 3. 发送邮件逻辑
     has_sent_any = False
