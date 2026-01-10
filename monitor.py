@@ -4,6 +4,7 @@ import json
 import os
 from email.mime.text import MIMEText
 from email.header import Header
+from email.mime.multipart import MIMEMultipart # 👈 需要新增这个导入
 
 # --- 配置区 ---
 # 建议在 GitHub Secrets 中设置
@@ -13,46 +14,6 @@ EMAIL_RECEIVER = os.environ.get('EMAIL_RECEIVER')
 SMTP_SERVER = "smtp.qq.com"  # 如果用Gmail或163请更换地址
 DB_FILE = "sent_products.json"
 
-# def get_uniqlo_data():
-#     url = "https://www.uniqlo.cn/data/pages/timelimit.html.json"
-#     headers = {
-#         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-#     }
-#     try:
-#         res = requests.get(url, headers=headers, timeout=15)
-#         data = res.json()
-#         items = []
-        
-#         # 遍历所有键值对
-#         for key, section_val in data.items():
-#             # 关键：只有当 key 以 section 开头，且内容确实是【字典】时才处理
-#             if key.startswith('section') and isinstance(section_val, dict):
-                
-#                 # 按照截图路径：sectionXX -> props -> items
-#                 props = section_val.get('props')
-                
-#                 # 再次确保 props 也是字典
-#                 if isinstance(props, dict):
-#                     raw_list = props.get('items', [])
-                    
-#                     if isinstance(raw_list, list):
-#                         for row in raw_list:
-#                             p_code = row.get('productCode')
-#                             if p_code:
-#                                 items.append({
-#                                     "productCode": str(p_code),
-#                                     "name": row.get('productName', '优衣库单品'),
-#                                     "price": float(row.get('price', 0)),
-#                                     "origin": row.get('originPrice', row.get('price')),
-#                                     "link": f"https://www.uniqlo.cn/product-detail.html?productCode={p_code}",
-#                                     "tag": "🔥限时特优"
-#                                 })
-        
-#         print(f"DEBUG: 接口解析成功，有效商品数: {len(items)}")
-#         return items
-#     except Exception as e:
-#         print(f"DEBUG: 解析异常: {e}")
-#         return []
 def get_all_uniqlo_data():
     # 定义两个数据源
     urls = {
@@ -82,13 +43,23 @@ def get_all_uniqlo_data():
                         for row in raw_list:
                             p_code = row.get('productCode')
                             if p_code:
+                                # all_items.append({
+                                #     "productCode": str(p_code),
+                                #     "name": row.get('productName', '优衣库单品'),
+                                #     "price": float(row.get('price', 0)),
+                                #     "origin": row.get('originPrice', row.get('price')),
+                                #     "link": f"https://www.uniqlo.cn/product-detail.html?productCode={p_code}",
+                                #     "tag": f"✨{channel_name}"  # 👈 这里区分标签
+                                # })
+                                # 在 get_all_uniqlo_data 函数的循环内修改
                                 all_items.append({
                                     "productCode": str(p_code),
                                     "name": row.get('productName', '优衣库单品'),
                                     "price": float(row.get('price', 0)),
                                     "origin": row.get('originPrice', row.get('price')),
                                     "link": f"https://www.uniqlo.cn/product-detail.html?productCode={p_code}",
-                                    "tag": f"✨{channel_name}"  # 👈 这里区分标签
+                                    "tag": f"✨{channel_name}",
+                                    "img": f"https://www.uniqlo.cn{row.get('mainPic', '')}"  # 👈 新增图片链接拼接
                                 })
                                 count += 1
             print(f"DEBUG: 【{channel_name}】抓取成功，商品数: {count}")
@@ -103,48 +74,100 @@ def load_history():
             return json.load(f)
     return {}
 
+# def send_email(items, subject_text="优衣库折扣监控提醒"):
+#     """
+#     修正版发送函数：
+#     1. 支持两个参数，解决 'takes 1 positional argument but 2 were given' 报错。
+#     2. 硬编码 SMTP 服务器为 smtp.qq.com，解决 'None:465' 连接失败问题。
+#     3. 动态设置邮件标题。
+#     """
+#     # 配置信息
+#     smtp_server = "smtp.163.com"  # 确保这里是字符串
+#     smtp_port = 465
+#     sender = os.environ.get('EMAIL_SENDER')
+#     password = os.environ.get('EMAIL_PASSWORD')
+#     receiver = os.environ.get('EMAIL_RECEIVER')
+
+#     print(f"DEBUG: 正在尝试连接服务器: {smtp_server}:{smtp_port}")
+
+#     # 1. 构造邮件正文
+#     content = f"为您发现以下优衣库【{subject_text}】相关折扣单品：\n\n"
+#     for item in items:
+#         content += f"---------------------------\n"
+#         content += f"【{item.get('tag', '限时特优')}】{item.get('name')}\n"
+#         content += f"当前价格：¥{item.get('price')} (原价：¥{item.get('origin')})\n"
+#         content += f"直达链接：{item.get('link')}\n\n"
+
+#     # 2. 构造邮件对象
+#     msg = MIMEText(content, 'plain', 'utf-8')
+#     msg['From'] = sender
+#     msg['To'] = receiver
+#     # 关键：这里使用传入的参数 subject_text
+#     msg['Subject'] = Header(subject_text, 'utf-8')
+
+#     # 3. 执行发送
+#     try:
+#         # 使用 SSL 建立安全连接
+#         server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=20)
+#         server.login(sender, password)
+#         server.sendmail(sender, [receiver], msg.as_string())
+#         server.quit()
+#         print(f"✅ 邮件【{subject_text}】发送成功！")
+#     except Exception as e:
+#         print(f"❌ 邮件【{subject_text}】发送失败: {e}")
+#         # 抛出异常让 main 函数知道，从而不更新 history 文件
+#         raise e
 def send_email(items, subject_text="优衣库折扣监控提醒"):
-    """
-    修正版发送函数：
-    1. 支持两个参数，解决 'takes 1 positional argument but 2 were given' 报错。
-    2. 硬编码 SMTP 服务器为 smtp.qq.com，解决 'None:465' 连接失败问题。
-    3. 动态设置邮件标题。
-    """
-    # 配置信息
-    smtp_server = "smtp.163.com"  # 确保这里是字符串
+    smtp_server = "smtp.qq.com" 
     smtp_port = 465
     sender = os.environ.get('EMAIL_SENDER')
     password = os.environ.get('EMAIL_PASSWORD')
     receiver = os.environ.get('EMAIL_RECEIVER')
 
-    print(f"DEBUG: 正在尝试连接服务器: {smtp_server}:{smtp_port}")
-
-    # 1. 构造邮件正文
-    content = f"为您发现以下优衣库【{subject_text}】相关折扣单品：\n\n"
+    # 1. 构造 HTML 格式的正文
+    html_content = f"""
+    <html>
+    <body>
+        <h2 style="color: #ff4444;">{subject_text}</h2>
+        <p>为您发现以下优衣库特惠单品：</p>
+        <table border="0" cellpadding="10" cellspacing="0" style="width: 100%; max-width: 600px;">
+    """
+    
     for item in items:
-        content += f"---------------------------\n"
-        content += f"【{item.get('tag', '限时特优')}】{item.get('name')}\n"
-        content += f"当前价格：¥{item.get('price')} (原价：¥{item.get('origin')})\n"
-        content += f"直达链接：{item.get('link')}\n\n"
+        html_content += f"""
+        <tr style="border-bottom: 1px solid #eee;">
+            <td style="width: 120px;">
+                <img src="{item['img']}" width="100" style="border-radius: 5px;">
+            </td>
+            <td>
+                <b style="font-size: 16px;">【{item['tag']}】{item['name']}</b><br>
+                <span style="color: red; font-size: 18px;">现价：¥{item['price']}</span> 
+                <del style="color: #999;">原价：¥{item['origin']}</del><br><br>
+                <a href="{item['link']}" style="background: #ff4444; color: white; padding: 5px 10px; text-decoration: none; border-radius: 3px;">立即前往购买</a>
+            </td>
+        </tr>
+        """
+    
+    html_content += "</table></body></html>"
 
-    # 2. 构造邮件对象
-    msg = MIMEText(content, 'plain', 'utf-8')
+    # 2. 构造邮件对象（注意这里改用 MIMEMultipart）
+    msg = MIMEMultipart()
     msg['From'] = sender
     msg['To'] = receiver
-    # 关键：这里使用传入的参数 subject_text
     msg['Subject'] = Header(subject_text, 'utf-8')
+    
+    # 将 HTML 内容附加到邮件中
+    msg.attach(MIMEText(html_content, 'html', 'utf-8'))
 
-    # 3. 执行发送
+    # 3. 发送
     try:
-        # 使用 SSL 建立安全连接
         server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=20)
         server.login(sender, password)
-        server.sendmail(sender, [receiver], msg.as_string())
+        server.sendmail(sender, receiver.split(','), msg.as_string())
         server.quit()
-        print(f"✅ 邮件【{subject_text}】发送成功！")
+        print(f"✅ 邮件【{subject_text}】(含图片)发送成功！")
     except Exception as e:
-        print(f"❌ 邮件【{subject_text}】发送失败: {e}")
-        # 抛出异常让 main 函数知道，从而不更新 history 文件
+        print(f"❌ 发送失败: {e}")
         raise e
 
 def main():
