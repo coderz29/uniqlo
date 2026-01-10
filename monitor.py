@@ -232,18 +232,21 @@ def main():
     has_sent_any = False
     for cat_title, items in categories.items():
         if items:
-            print(f"正在准备推送【{cat_title}】...")
+            print(f">>> 正在推送分类：【{cat_title}】...")
             try:
                 subject = f"优衣库折扣提醒 - {cat_title}"
                 send_email(items, subject) 
                 has_sent_any = True
                 
-                # 💡 关键修复：每发完一类，休息 5 秒，防止被邮箱服务器封禁
-                print(f"等待 5 秒后继续下一类...")
-                time.sleep(5) 
+                # --- 💡 必须加在这里！每成功发送一类，强制休息 10 秒 ---
+                print(f"防止频率过快，强制等待 10 秒...")
+                time.sleep(10) 
+                # -----------------------------------------------
                 
             except Exception as e:
-                print(f"❌ 【{cat_title}】推送失败: {e}")
+                print(f"❌ 【{cat_title}】推送中途失败: {e}")
+                # 如果失败了，也建议休息一下再试下一个分类
+                time.sleep(5)
 
     if has_sent_any:
         with open(DB_FILE, 'w', encoding='utf-8') as f:
